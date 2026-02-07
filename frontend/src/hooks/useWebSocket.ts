@@ -18,9 +18,23 @@ export default function useWebSocket() {
       reconnectionAttempts: 5,
     })
 
-    socketInstance.on('connect', () => {
+    socketInstance.on('connect', async () => {
       console.log('WebSocket connected')
       setIsConnected(true)
+
+      // Fetch any missed events from backend history
+      try {
+        const response = await fetch(`${backendUrl}/api/events/history`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.events && data.events.length > 0) {
+            console.log(`Fetched ${data.events.length} events from history`)
+            setEvents(data.events)
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch event history:', error)
+      }
     })
 
     socketInstance.on('disconnect', () => {

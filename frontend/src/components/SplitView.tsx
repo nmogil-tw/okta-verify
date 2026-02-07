@@ -1,8 +1,8 @@
-import { useEffect } from 'react'
-import OktaLoginPane from './OktaLoginPane'
+import { useEffect, useRef } from 'react'
+import OktaLoginPane, { OktaLoginPaneRef } from './OktaLoginPane'
 import ApiInspectorPane from './ApiInspectorPane'
 import { DemoEvent } from '../types/events'
-import useWebSocket from '../hooks/useWebSocket'
+import { useEventManager } from '../hooks/useEventManager'
 
 interface SplitViewProps {
   events: DemoEvent[]
@@ -19,19 +19,35 @@ export default function SplitView({
   onEventsChange,
   onConnectionChange,
 }: SplitViewProps) {
-  const { events: wsEvents, isConnected: wsConnected, clearEvents } = useWebSocket()
+  const { events: allEvents, isConnected: wsConnected, clearAllEvents, addFrontendEvent } = useEventManager()
+  const oktaLoginPaneRef = useRef<OktaLoginPaneRef>(null)
 
   useEffect(() => {
-    onEventsChange(wsEvents)
-  }, [wsEvents, onEventsChange])
+    onEventsChange(allEvents)
+  }, [allEvents, onEventsChange])
 
   useEffect(() => {
     onConnectionChange(wsConnected)
   }, [wsConnected, onConnectionChange])
 
-  const handleReset = () => {
-    clearEvents()
+  const handleClearEvents = () => {
+    clearAllEvents()
     onReset()
+  }
+
+  const handleReset = async () => {
+    console.log('SplitView handleReset called')
+
+    // Trigger Okta logout via the ref
+    if (oktaLoginPaneRef.current) {
+      console.log('Calling resetWithOktaLogout from SplitView')
+      await oktaLoginPaneRef.current.resetWithOktaLogout()
+    } else {
+      console.log('oktaLoginPaneRef.current is null')
+      // If no ref, just clear events and reload
+      handleClearEvents()
+      window.location.reload()
+    }
   }
 
   return (
@@ -68,7 +84,7 @@ export default function SplitView({
       <div className="flex-1 grid grid-cols-2 divide-x divide-gray-300 overflow-hidden">
         {/* Left Pane: Okta Login */}
         <div className="overflow-auto bg-gray-50">
-          <OktaLoginPane onReset={handleReset} />
+          <OktaLoginPane ref={oktaLoginPaneRef} onReset={handleClearEvents} addFrontendEvent={addFrontendEvent} />
         </div>
 
         {/* Right Pane: API Inspector */}

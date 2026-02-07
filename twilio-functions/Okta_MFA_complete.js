@@ -67,6 +67,63 @@ exports.handler = async function(context, event, callback) {
 
       console.log('Send code attempts:', verification.sendCodeAttempts);
 
+      // Send event to demo backend webhook (non-critical)
+      if (context.DEMO_WEBHOOK_URL) {
+        console.log('Sending event to demo backend...');
+
+        try {
+          const demoEvent = {
+            type: 'telephony_hook',
+            timestamp: new Date().toISOString(),
+            request: {
+              url: 'https://twilio-function.twil.io/Okta_MFA',
+              method: 'POST',
+              body: {
+                userId: event.data.userProfile?.login || 'unknown',
+                phoneNumber: phoneNumber,
+                channel: deliveryChannel,
+                otpCode: '[REDACTED]',
+                factorType: 'SMS',
+              }
+            },
+            response: {
+              status: 200,
+              body: {
+                verificationSid: verification.sid,
+                status: verification.status,
+                to: verification.to,
+                channel: verification.channel,
+              }
+            },
+            metadata: {
+              phoneNumber: phoneNumber,
+              channel: deliveryChannel,
+              verificationSid: verification.sid,
+              status: 'pending',
+            }
+          };
+
+          const fetch = require('node-fetch');
+          const webhookResponse = await fetch(context.DEMO_WEBHOOK_URL + '/api/events/capture', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Demo-Secret': context.DEMO_SECRET || 'default-secret'
+            },
+            body: JSON.stringify(demoEvent)
+          });
+
+          if (webhookResponse.ok) {
+            console.log('✅ Event sent to demo backend');
+          } else {
+            console.warn('⚠️ Demo webhook returned error:', webhookResponse.status);
+          }
+        } catch (webhookError) {
+          // Non-critical, don't fail the main flow
+          console.warn('⚠️ Failed to send demo event:', webhookError.message);
+        }
+      }
+
       // Return success response with transaction metadata
       const response = {
         commands: [{

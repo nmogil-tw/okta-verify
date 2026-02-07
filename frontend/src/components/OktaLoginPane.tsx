@@ -1,16 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react'
 import OktaSignIn from '@okta/okta-signin-widget'
 import StepIndicator from './StepIndicator'
+import { EventGenerator } from '../services/eventGenerator'
+import { DemoEvent } from '../types/events'
 
 interface OktaLoginPaneProps {
   onReset: () => void
+  addFrontendEvent?: (event: DemoEvent) => void
 }
 
-export default function OktaLoginPane({ onReset }: OktaLoginPaneProps) {
+export interface OktaLoginPaneRef {
+  resetWithOktaLogout: () => Promise<void>
+}
+
+const OktaLoginPane = forwardRef<OktaLoginPaneRef, OktaLoginPaneProps>(({ onReset, addFrontendEvent }, ref) => {
   const widgetRef = useRef<HTMLDivElement>(null)
   const [widget, setWidget] = useState<OktaSignIn | null>(null)
   const [currentStep, setCurrentStep] = useState<number>(1)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const eventGeneratorRef = useRef(new EventGenerator())
 
   useEffect(() => {
     if (!widgetRef.current) return
@@ -33,6 +41,9 @@ export default function OktaLoginPane({ onReset }: OktaLoginPaneProps) {
           useClassicEngine: true,
           useInteractionCodeFlow: false,
         })
+
+        // Save widget to state so it's available for sign-out
+        setWidget(signIn)
 
         const authClient = signIn.authClient
         const accessToken = await authClient.tokenManager.get('accessToken')
@@ -86,6 +97,12 @@ export default function OktaLoginPane({ onReset }: OktaLoginPaneProps) {
         pkce: true,
       })
 
+      // Generate widget init event
+      if (addFrontendEvent) {
+        const widgetInitEvent = eventGeneratorRef.current.generateWidgetInitEvent()
+        addFrontendEvent(widgetInitEvent)
+      }
+
       // Use showSignInAndRedirect for Authorization Code flow
       // This will trigger a full-page redirect to Okta (no iframes)
       signIn.showSignInAndRedirect({
@@ -102,20 +119,59 @@ export default function OktaLoginPane({ onReset }: OktaLoginPaneProps) {
     }
   }, [])
 
-  const handleResetClick = () => {
-    setIsAuthenticated(false)
-    setCurrentStep(1)
-    onReset()
+  const handleResetClick = async () => {
+    try {
+      console.log('=== RESET CLICKED ===')
+      console.log('Widget state:', widget)
+      console.log('Widget is null?', widget === null)
 
-    // Clear tokens
-    if (widget) {
-      widget.authClient.tokenManager.clear()
-      widget.remove()
+      // Clear application state first
+      setIsAuthenticated(false)
+      setCurrentStep(1)
+      onReset()
+
+      // Sign out from Okta (this will redirect to Okta and back)
+      if (widget) {
+        console.log('Widget exists, attempting sign-out...')
+        console.log('AuthClient:', widget.authClient)
+
+        // Clear local tokens before sign out
+        console.log('Clearing token manager...')
+        widget.authClient.tokenManager.clear()
+
+        // Sign out with explicit options - this will redirect the page
+        // so no code after this will execute
+        console.log('Calling signOut()...')
+        await widget.authClient.signOut({
+          postLogoutRedirectUri: window.location.origin,
+          revokeAccessToken: true,
+          revokeRefreshToken: true
+        })
+
+        // This code won't execute because signOut redirects
+        console.log('Okta sign-out initiated (should redirect)...')
+      } else {
+        // If no widget, just reload
+        console.log('ERROR: No widget found! Cannot sign out from Okta.')
+        console.log('Reloading page...')
+        window.location.reload()
+      }
+    } catch (error) {
+      console.error('Error during sign-out:', error)
+
+      // Even if sign-out fails, clear local state and reload
+      if (widget) {
+        widget.authClient.tokenManager.clear()
+        widget.remove()
+      }
+      window.location.reload()
     }
-
-    // Reload page to reinitialize widget
-    window.location.reload()
   }
+
+  // Expose reset function to parent components via ref
+  useImperativeHandle(ref, () => ({
+    resetWithOktaLogout: handleResetClick
+  }))
 
   return (
     <div className="h-full flex flex-col">
@@ -166,4 +222,8 @@ export default function OktaLoginPane({ onReset }: OktaLoginPaneProps) {
       </div>
     </div>
   )
-}
+})
+
+OktaLoginPane.displayName = 'OktaLoginPane'
+
+export default OktaLoginPane

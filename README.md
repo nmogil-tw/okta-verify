@@ -148,22 +148,60 @@ okta-verify/
 
 ## Event Types
 
-The demo captures three types of events:
+The demo captures two categories of events:
 
-### 1. Telephony Hook
+### Backend Events (Real API Calls)
+
+These events are captured by the backend when Twilio Functions make actual API calls:
+
+**1. Telephony Hook**
 - **Description:** Okta calls Twilio Function to request SMS verification
 - **Flow:** Okta → Twilio Function
 - **Payload:** User info, phone number, OTP code
+- **Badge:** Backend (Blue)
 
-### 2. Verify API
+**2. Verify API**
 - **Description:** Twilio Function calls Verify API to send SMS
 - **Flow:** Twilio Function → Twilio Verify
 - **Payload:** Verification request, SMS details
+- **Badge:** Backend (Blue)
 
-### 3. Event Hook
+**3. Event Hook**
 - **Description:** Okta reports verification result
 - **Flow:** Okta → Twilio Function
 - **Payload:** Authentication outcome, MFA result
+- **Badge:** Backend (Blue)
+
+### Frontend Events (User Journey Tracking)
+
+These synthetic events track the user's authentication journey through the OAuth flow:
+
+**1. Widget Init**
+- **Description:** Okta Sign-In Widget initialized
+- **Trigger:** When the login page loads
+- **Badge:** Frontend (Orange)
+
+**2. OAuth Redirect**
+- **Description:** User redirected to Okta for authentication
+- **Trigger:** When OAuth flow begins
+- **Badge:** Frontend (Orange)
+
+**3. OAuth Callback**
+- **Description:** User returned from Okta with authorization code
+- **Trigger:** When callback URL is hit
+- **Badge:** Frontend (Orange)
+
+**4. Token Exchange**
+- **Description:** Authorization code exchanged for access tokens
+- **Trigger:** During callback processing
+- **Badge:** Frontend (Orange)
+
+**5. Auth Success**
+- **Description:** Authentication completed successfully
+- **Trigger:** After tokens are stored
+- **Badge:** Frontend (Orange)
+
+Frontend events persist across OAuth redirects using sessionStorage, ensuring visibility throughout the entire authentication flow.
 
 ## Troubleshooting
 
