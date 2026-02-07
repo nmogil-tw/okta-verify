@@ -40,6 +40,14 @@ const OktaLoginPane = forwardRef<OktaLoginPaneRef, OktaLoginPaneProps>(({ onRese
           redirectUri: window.location.origin + '/callback',
           useClassicEngine: true,
           useInteractionCodeFlow: false,
+          authParams: {
+            issuer: oktaOrgUrl,
+            responseType: 'code',
+            pkce: true,
+          },
+          tokenManager: {
+            storage: 'localStorage'
+          }
         })
 
         // Save widget to state so it's available for sign-out
@@ -65,26 +73,30 @@ const OktaLoginPane = forwardRef<OktaLoginPaneRef, OktaLoginPaneProps>(({ onRese
     checkAuth().then(alreadyAuthenticated => {
       if (alreadyAuthenticated) return
 
-      // Initialize widget with Authorization Code + PKCE flow
+      // Initialize widget with Authorization Code + PKCE (redirect flow in popup)
       console.log('Initializing Okta Sign-In Widget with Authorization Code + PKCE')
 
       const signIn = new OktaSignIn({
         baseUrl: oktaOrgUrl,
         clientId: clientId,
         redirectUri: window.location.origin + '/callback',
-        useClassicEngine: true,         // Use Classic Engine
-        useInteractionCodeFlow: false,  // Disable Interaction Code
+        useClassicEngine: true,
+        useInteractionCodeFlow: false,
         authParams: {
-          issuer: oktaOrgUrl,  // Use Org Authorization Server (not /oauth2/default)
+          issuer: oktaOrgUrl,
           scopes: ['openid', 'profile', 'email'],
-          responseType: 'code',  // Authorization Code flow
-          pkce: true,            // Enable PKCE
+          responseType: 'code',
+          pkce: true,
         },
         features: {
           registration: false,
           rememberMe: true,
           autoFocus: true,
         },
+        // Use localStorage instead of sessionStorage so popup can access PKCE verifier
+        tokenManager: {
+          storage: 'localStorage'
+        }
       })
 
       setWidget(signIn)
@@ -103,13 +115,166 @@ const OktaLoginPane = forwardRef<OktaLoginPaneRef, OktaLoginPaneProps>(({ onRese
         addFrontendEvent(widgetInitEvent)
       }
 
-      // Use showSignInAndRedirect for Authorization Code flow
-      // This will trigger a full-page redirect to Okta (no iframes)
-      signIn.showSignInAndRedirect({
-        el: widgetRef.current as unknown as string,
-      }).catch((error: any) => {
-        console.error('Error showing sign-in widget:', error)
-      })
+      // Render a button that opens authentication in a popup window
+      if (widgetRef.current) {
+        widgetRef.current.innerHTML = `
+          <div style="text-align: center; padding: 40px;">
+            <h3 style="margin-bottom: 20px; font-size: 18px; font-weight: 600;">Ready to sign in</h3>
+            <button id="okta-signin-btn" style="
+              background: #007dc1;
+              color: white;
+              border: none;
+              padding: 12px 24px;
+              border-radius: 4px;
+              font-size: 16px;
+              cursor: pointer;
+              font-weight: 500;
+            ">
+              Sign In with Okta
+            </button>
+          </div>
+        `
+
+        const button = document.getElementById('okta-signin-btn')
+        if (button) {
+          button.addEventListener('click', async () => {
+            try {
+              console.log('🔄 Opening popup for authentication...')
+
+              // Generate oauth_redirect event
+              if (addFrontendEvent) {
+                const redirectEvent = eventGeneratorRef.current.generateOAuthRedirectEvent(
+                  `${oktaOrgUrl}/oauth2/v1/authorize`
+                )
+                addFrontendEvent(redirectEvent)
+              }
+
+              // Open popup window for authentication
+              const width = 500
+              const height = 700
+              const left = window.screen.width / 2 - width / 2
+              const top = window.screen.height / 2 - height / 2
+
+              // Manually build authorize URL with PKCE
+              console.log('Generating PKCE parameters...')
+
+              // Generate PKCE code verifier (random string)
+              const codeVerifier = signIn.authClient.pkce.generateVerifier()
+              console.log('Code verifier generated:', codeVerifier.substring(0, 20) + '...')
+
+              // Compute code challenge from verifier
+              const codeChallenge = await signIn.authClient.pkce.computeChallenge(codeVerifier)
+              console.log('Code challenge computed:', codeChallenge.substring(0, 20) + '...')
+
+              // Generate state and nonce
+              const state = Math.random().toString(36).substring(2, 15)
+              const nonce = Math.random().toString(36).substring(2, 15)
+
+              // Store in localStorage for popup to access
+              localStorage.setItem('okta-pkce-storage', JSON.stringify({
+                codeVerifier,
+                redirectUri: window.location.origin + '/callback',
+                state,
+                nonce,
+              }))
+
+              console.log('PKCE data stored in localStorage')
+
+              // Build authorize URL
+              const authorizeUrl = `${oktaOrgUrl}/oauth2/v1/authorize?` + new URLSearchParams({
+                client_id: clientId,
+                response_type: 'code',
+                scope: 'openid profile email',
+                redirect_uri: window.location.origin + '/callback',
+                state: state,
+                nonce: nonce,
+                code_challenge: codeChallenge,
+                code_challenge_method: 'S256',
+              }).toString()
+
+              console.log('Opening popup with URL:', authorizeUrl)
+
+              const popup = window.open(
+                authorizeUrl,
+                'okta-signin',
+                `width=${width},height=${height},left=${left},top=${top},toolbar=no,location=no,status=no,menubar=no,scrollbars=yes`
+              )
+
+            if (!popup) {
+              alert('Popup was blocked. Please allow popups for this site.')
+              return
+            }
+
+            // Listen for callback message from popup
+            const messageHandler = async (event: MessageEvent) => {
+              // Only accept messages from our domain
+              if (event.origin !== window.location.origin) return
+
+              if (event.data.type === 'okta-callback') {
+                console.log('✅ Received callback from popup')
+
+                window.removeEventListener('message', messageHandler)
+                clearInterval(popupCheck)
+                popup.close()
+
+                // Clean up PKCE data (should already be cleaned by popup, but double-check)
+                localStorage.removeItem('okta-pkce-storage')
+
+                // The tokens are already stored by LoginCallback in the popup
+                // Just verify they exist
+                const idToken = await signIn.authClient.tokenManager.get('idToken')
+                const accessToken = await signIn.authClient.tokenManager.get('accessToken')
+
+                if (idToken && accessToken) {
+                  console.log('✅ Tokens confirmed in parent window')
+
+                  // Generate remaining auth events
+                  if (addFrontendEvent) {
+                    // oauth_callback
+                    const callbackEvent = eventGeneratorRef.current.generateCallbackEvent()
+                    addFrontendEvent(callbackEvent)
+
+                    // token_exchange
+                    const tokenEvent = eventGeneratorRef.current.generateTokenExchangeEvent()
+                    addFrontendEvent(tokenEvent)
+
+                    // auth_success
+                    const successEvent = eventGeneratorRef.current.generateAuthSuccessEvent()
+                    addFrontendEvent(successEvent)
+                  }
+
+                  // Update UI state
+                  setIsAuthenticated(true)
+                  setCurrentStep(3)
+                } else {
+                  console.error('Tokens not found after callback')
+                  alert('Authentication failed. Tokens not received.')
+                }
+              }
+            }
+
+            window.addEventListener('message', messageHandler)
+
+            // Monitor if popup is closed manually
+            const popupCheck = setInterval(() => {
+              if (popup.closed) {
+                clearInterval(popupCheck)
+                window.removeEventListener('message', messageHandler)
+                console.log('Popup was closed by user')
+                // Clean up PKCE data if popup was closed without completing auth
+                localStorage.removeItem('okta-pkce-storage')
+              }
+            }, 500)
+
+            } catch (error) {
+              console.error('Error opening popup:', error)
+              alert('Failed to open authentication popup: ' + (error as Error).message)
+              // Clean up PKCE data on error
+              localStorage.removeItem('okta-pkce-storage')
+            }
+          })
+        }
+      }
     })
 
     return () => {
@@ -174,23 +339,23 @@ const OktaLoginPane = forwardRef<OktaLoginPaneRef, OktaLoginPaneProps>(({ onRese
   }))
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="p-6 border-b border-gray-200 bg-white">
-        <h2 className="text-xl font-semibold text-gray-800 mb-2">
+    <div className="h-full flex flex-col animate-fade-in-up">
+      <div className="p-8 border-b border-neutral-200 bg-white">
+        <h2 className="text-2xl font-bold text-neutral-900 mb-2">
           User Login Experience
         </h2>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-neutral-600 mb-6">
           This is what your users see when logging in with Okta
         </p>
         <StepIndicator currentStep={currentStep} totalSteps={3} />
       </div>
 
-      <div className="flex-1 flex items-start justify-center p-6 relative">
+      <div className="flex-1 flex items-start justify-center p-8 relative">
         {isAuthenticated ? (
-          <div className="text-center">
+          <div className="text-center animate-fade-in-up bg-white rounded-2xl shadow-soft-lg p-12 max-w-md border border-neutral-200">
             <div className="mb-6">
               <svg
-                className="w-20 h-20 mx-auto text-green-500"
+                className="w-24 h-24 mx-auto text-accent-green"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -203,21 +368,23 @@ const OktaLoginPane = forwardRef<OktaLoginPaneRef, OktaLoginPaneProps>(({ onRese
                 />
               </svg>
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">
+            <h3 className="text-3xl font-bold text-neutral-900 mb-3">
               Authentication Successful!
             </h3>
-            <p className="text-gray-600 mb-6">
+            <p className="text-neutral-600 mb-8 leading-relaxed">
               You have successfully logged in with MFA verification
             </p>
             <button
               onClick={handleResetClick}
-              className="px-6 py-2 bg-okta-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="px-6 py-3 bg-okta-blue text-white rounded-lg hover:bg-okta-blue/90 active:scale-95 transition-all duration-200 font-semibold shadow-soft-md hover:shadow-soft-lg"
             >
               Try Again
             </button>
           </div>
         ) : (
-          <div ref={widgetRef} id="okta-signin-container" />
+          <div className="bg-white rounded-2xl shadow-soft-lg p-8 max-w-md w-full border border-neutral-200">
+            <div ref={widgetRef} id="okta-signin-container" />
+          </div>
         )}
       </div>
     </div>

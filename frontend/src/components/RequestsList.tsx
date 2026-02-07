@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { DemoEvent } from '../types/events'
 import RequestDetail from './RequestDetail'
 
@@ -8,29 +8,71 @@ interface RequestsListProps {
 
 export default function RequestsList({ events }: RequestsListProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [newEventId, setNewEventId] = useState<string | null>(null)
+  const prevEventsLengthRef = useRef(events.length)
+
+  // Detect new events and trigger highlight animation
+  useEffect(() => {
+    if (events.length > prevEventsLengthRef.current) {
+      const latestEvent = events[events.length - 1]
+      setNewEventId(latestEvent.id)
+
+      // Remove highlight after animation completes
+      const timer = setTimeout(() => {
+        setNewEventId(null)
+      }, 1000)
+
+      prevEventsLengthRef.current = events.length
+      return () => clearTimeout(timer)
+    }
+    prevEventsLengthRef.current = events.length
+  }, [events])
 
   const getEventBadgeColor = (type: DemoEvent['type']) => {
     switch (type) {
       // Backend events (blue/purple/green)
       case 'telephony_hook':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-okta-blue/10 text-okta-blue border-okta-blue/20'
       case 'verify_api':
-        return 'bg-purple-100 text-purple-800'
+        return 'bg-accent-purple/10 text-accent-purple border-accent-purple/20'
       case 'event_hook':
-        return 'bg-green-100 text-green-800'
+        return 'bg-accent-green/10 text-accent-green border-accent-green/20'
       // Frontend events (orange/amber)
       case 'widget_init':
-        return 'bg-orange-100 text-orange-800'
+        return 'bg-accent-amber/10 text-accent-amber border-accent-amber/20'
       case 'oauth_redirect':
-        return 'bg-amber-100 text-amber-800'
+        return 'bg-accent-cyan/10 text-accent-cyan border-accent-cyan/20'
       case 'oauth_callback':
-        return 'bg-orange-100 text-orange-800'
+        return 'bg-accent-amber/10 text-accent-amber border-accent-amber/20'
       case 'token_exchange':
-        return 'bg-amber-100 text-amber-800'
+        return 'bg-accent-cyan/10 text-accent-cyan border-accent-cyan/20'
       case 'auth_success':
-        return 'bg-green-100 text-green-800'
+        return 'bg-accent-green/10 text-accent-green border-accent-green/20'
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-neutral-100 text-neutral-700 border-neutral-200'
+    }
+  }
+
+  const getEventAccentColor = (type: DemoEvent['type']) => {
+    switch (type) {
+      case 'telephony_hook':
+        return 'border-okta-blue'
+      case 'verify_api':
+        return 'border-accent-purple'
+      case 'event_hook':
+        return 'border-accent-green'
+      case 'widget_init':
+        return 'border-accent-amber'
+      case 'oauth_redirect':
+        return 'border-accent-cyan'
+      case 'oauth_callback':
+        return 'border-accent-amber'
+      case 'token_exchange':
+        return 'border-accent-cyan'
+      case 'auth_success':
+        return 'border-accent-green'
+      default:
+        return 'border-neutral-300'
     }
   }
 
@@ -88,24 +130,31 @@ export default function RequestsList({ events }: RequestsListProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 relative">
+      {/* Timeline connector line */}
+      {events.length > 1 && (
+        <div className="absolute left-5 top-8 bottom-8 w-0.5 bg-neutral-200" />
+      )}
+
       {events.map((event, index) => (
         <div
           key={event.id}
-          className="border border-gray-200 rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow"
+          className={`relative border border-neutral-200 rounded-xl bg-white shadow-soft hover:shadow-soft-md transition-all duration-300 border-l-4 ${getEventAccentColor(
+            event.type
+          )} ${newEventId === event.id ? 'animate-highlight-flash' : ''}`}
         >
           <button
             onClick={() => setExpandedId(expandedId === event.id ? null : event.id)}
-            className="w-full p-4 text-left"
+            className="w-full p-5 text-left hover:bg-neutral-50/50 rounded-xl transition-colors duration-200"
           >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-sm font-mono text-gray-500">
-                    #{index + 1}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-3 flex-wrap">
+                  <span className="text-sm font-mono font-semibold text-neutral-500 tabular-nums">
+                    #{String(index + 1).padStart(2, '0')}
                   </span>
                   <span
-                    className={`px-2 py-1 rounded-md text-xs font-semibold ${getEventBadgeColor(
+                    className={`px-3 py-1 rounded-lg text-xs font-bold border ${getEventBadgeColor(
                       event.type
                     )}`}
                   >
@@ -114,7 +163,7 @@ export default function RequestsList({ events }: RequestsListProps) {
                   {/* Source badge */}
                   {event.metadata?.synthetic && (
                     <span
-                      className="px-2 py-1 rounded-md text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200"
+                      className="px-2.5 py-1 rounded-md text-xs font-semibold bg-accent-amber/10 text-accent-amber border border-accent-amber/20"
                       title="Generated by frontend for demo visualization"
                     >
                       Frontend
@@ -122,32 +171,42 @@ export default function RequestsList({ events }: RequestsListProps) {
                   )}
                   {!event.metadata?.synthetic && (
                     <span
-                      className="px-2 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200"
+                      className="px-2.5 py-1 rounded-md text-xs font-semibold bg-accent-blue/10 text-accent-blue border border-accent-blue/20"
                       title="Real API call captured by backend"
                     >
                       Backend
                     </span>
                   )}
-                  <span className="text-xs text-gray-500 font-mono">
+                  <span className="text-xs text-neutral-500 font-mono tabular-nums">
                     {formatTimestamp(event.timestamp)}
                   </span>
                   {event.duration && (
-                    <span className="text-xs text-gray-500">
-                      ({event.duration}ms)
+                    <span className="text-xs text-neutral-500 font-mono tabular-nums">
+                      <span className="text-neutral-400">⏱</span> {event.duration}ms
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-700 font-medium">
+                <p className="text-sm text-neutral-800 font-semibold mb-2 leading-relaxed">
                   {getEventDescription(event)}
                 </p>
-                <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
-                  <span className="font-mono">{event.request.method}</span>
-                  <span>•</span>
-                  <span className="font-mono truncate">{event.request.url}</span>
+                <div className="flex items-center gap-3 text-xs">
+                  <span
+                    className={`font-mono font-semibold px-2 py-0.5 rounded ${
+                      event.request.method === 'GET'
+                        ? 'bg-accent-cyan/10 text-accent-cyan'
+                        : 'bg-accent-purple/10 text-accent-purple'
+                    }`}
+                  >
+                    {event.request.method}
+                  </span>
+                  <span className="text-neutral-400">•</span>
+                  <span className="font-mono text-neutral-600 truncate flex-1">
+                    {event.request.url}
+                  </span>
                 </div>
               </div>
               <svg
-                className={`w-5 h-5 text-gray-400 transition-transform ${
+                className={`w-5 h-5 text-neutral-400 transition-transform duration-300 flex-shrink-0 mt-1 ${
                   expandedId === event.id ? 'rotate-180' : ''
                 }`}
                 fill="none"
@@ -165,7 +224,7 @@ export default function RequestsList({ events }: RequestsListProps) {
           </button>
 
           {expandedId === event.id && (
-            <div className="border-t border-gray-200">
+            <div className="border-t border-neutral-200 animate-fade-in-up">
               <RequestDetail event={event} />
             </div>
           )}

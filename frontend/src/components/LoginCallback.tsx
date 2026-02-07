@@ -12,6 +12,8 @@ export default function LoginCallback() {
 
   useEffect(() => {
     const processCallback = async () => {
+      console.log('⚠️ Processing OAuth callback via REDIRECT (fallback mode - popup was blocked)')
+
       try {
         // Check for Okta error parameters in URL
         const urlParams = new URLSearchParams(window.location.search)
@@ -37,6 +39,10 @@ export default function LoginCallback() {
             responseType: 'code',
             pkce: true,
           },
+          // Use localStorage so PKCE verifier can be shared between parent and popup
+          tokenManager: {
+            storage: 'localStorage'
+          }
         })
 
         console.log('Processing OAuth callback...')
@@ -46,31 +52,70 @@ export default function LoginCallback() {
         addFrontendEvent(callbackEvent)
 
         // Validate URL has required parameters
-        const hasCode = urlParams.get('code')
-        const hasState = urlParams.get('state')
+        const code = urlParams.get('code')
+        const state = urlParams.get('state')
 
-        if (!hasCode || !hasState) {
+        if (!code || !state) {
           console.warn('⚠️ Missing code or state parameter in callback URL')
+          setError('Missing required OAuth parameters')
+          return
+        }
+
+        // Retrieve PKCE data from localStorage
+        const pkceDataStr = localStorage.getItem('okta-pkce-storage')
+        if (!pkceDataStr) {
+          console.error('❌ PKCE data not found in localStorage')
+          setError('PKCE verification data missing')
+          return
+        }
+
+        const pkceData = JSON.parse(pkceDataStr)
+        console.log('Retrieved PKCE data from localStorage')
+
+        // Verify state matches
+        if (state !== pkceData.state) {
+          console.error('❌ State mismatch!')
+          setError('Invalid state parameter')
+          return
         }
 
         // Generate token exchange event
         const tokenEvent = eventGeneratorRef.current.generateTokenExchangeEvent()
         addFrontendEvent(tokenEvent)
 
-        // Parse authorization code and exchange for tokens
-        const tokens = await signIn.authClient.token.parseFromUrl()
+        // Exchange authorization code for tokens using PKCE verifier
+        const tokens = await signIn.authClient.token.exchangeCodeForTokens({
+          authorizationCode: code,
+          codeVerifier: pkceData.codeVerifier,
+          redirectUri: pkceData.redirectUri,
+        })
 
         console.log('✅ Successfully received tokens:', tokens)
 
         // Store tokens in token manager
         signIn.authClient.tokenManager.setTokens(tokens.tokens)
 
+        // Clean up PKCE data from localStorage
+        localStorage.removeItem('okta-pkce-storage')
+        console.log('Cleaned up PKCE data from localStorage')
+
         // Generate success event
         const successEvent = eventGeneratorRef.current.generateAuthSuccessEvent()
         addFrontendEvent(successEvent)
 
-        // Navigate back to main app
-        navigate('/', { replace: true })
+        // Check if we're in a popup window
+        if (window.opener && !window.opener.closed) {
+          console.log('Running in popup - sending message to parent')
+          // Send message to parent window
+          window.opener.postMessage(
+            { type: 'okta-callback', success: true },
+            window.location.origin
+          )
+          // Don't navigate - parent will close the popup
+        } else {
+          // Normal flow - navigate back to main app
+          navigate('/', { replace: true })
+        }
       } catch (err: any) {
         console.error('❌ Callback error:', err)
         const errorMessage = err.message || 'Authentication failed'
@@ -79,6 +124,10 @@ export default function LoginCallback() {
           errorCode: err.errorCode,
           url: window.location.href
         })
+
+        // Clean up PKCE data on error
+        localStorage.removeItem('okta-pkce-storage')
+
         setError(errorMessage)
       }
     }

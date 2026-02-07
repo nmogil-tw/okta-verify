@@ -16,10 +16,10 @@ export default function StepIndicator({ currentStep }: StepIndicatorProps) {
         <div key={step.number} className="flex items-center flex-1">
           <div className="flex flex-col items-center flex-1">
             <div
-              className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm transition-colors ${
+              className={`w-11 h-11 rounded-full flex items-center justify-center font-semibold text-sm transition-all duration-300 ${
                 currentStep >= step.number
-                  ? 'bg-okta-blue text-white'
-                  : 'bg-gray-200 text-gray-500'
+                  ? 'bg-okta-blue text-white shadow-[0_0_12px_rgba(0,125,193,0.3)]'
+                  : 'bg-neutral-200 text-neutral-500'
               }`}
             >
               {currentStep > step.number ? (
@@ -35,8 +35,8 @@ export default function StepIndicator({ currentStep }: StepIndicatorProps) {
               )}
             </div>
             <span
-              className={`mt-2 text-xs font-medium ${
-                currentStep >= step.number ? 'text-okta-blue' : 'text-gray-500'
+              className={`mt-3 text-xs font-semibold transition-colors duration-300 ${
+                currentStep >= step.number ? 'text-okta-blue' : 'text-neutral-500'
               }`}
             >
               {step.label}
@@ -44,8 +44,8 @@ export default function StepIndicator({ currentStep }: StepIndicatorProps) {
           </div>
           {index < steps.length - 1 && (
             <div
-              className={`h-1 flex-1 mx-2 transition-colors ${
-                currentStep > step.number ? 'bg-okta-blue' : 'bg-gray-200'
+              className={`h-1 flex-1 mx-3 rounded-full transition-all duration-500 ${
+                currentStep > step.number ? 'bg-okta-blue' : 'bg-neutral-200'
               }`}
             />
           )}

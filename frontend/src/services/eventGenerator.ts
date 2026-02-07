@@ -20,7 +20,7 @@ export class EventGenerator {
         body: {
           baseUrl: import.meta.env.VITE_OKTA_ORG_URL,
           clientId: import.meta.env.VITE_OKTA_CLIENT_ID,
-          flow: 'Authorization Code + PKCE',
+          flow: 'Authorization Code + PKCE (Popup Mode)',
           redirectUri: window.location.origin + '/callback',
         }
       },
@@ -52,7 +52,7 @@ export class EventGenerator {
       metadata: {
         synthetic: true,
         source: 'frontend',
-        description: 'Redirecting to Okta for authentication'
+        description: 'Opening Okta authentication in popup window'
       }
     }
   }
@@ -61,32 +61,32 @@ export class EventGenerator {
    * Generate event when OAuth callback is received
    */
   generateCallbackEvent(): DemoEvent {
-    const urlParams = new URLSearchParams(window.location.search)
-    const code = urlParams.get('code')
-    const state = urlParams.get('state')
-
+    // In popup flow, the callback happens in the popup window,
+    // not the main window, so we generate a synthetic representation
     return {
       id: uuidv4(),
       type: 'oauth_callback',
       timestamp: new Date().toISOString(),
       request: {
-        url: window.location.href,
+        url: 'popup://okta-authentication/callback',
         method: 'GET',
         body: {
-          code: code ? `${code.substring(0, 10)}...` : 'missing',
-          state: state ? `${state.substring(0, 10)}...` : 'missing',
+          code: '[authorization code received in popup]',
+          state: '[verified in popup window]',
+          mode: 'popup',
         }
       },
       response: {
         status: 200,
         body: {
-          received: true
+          codeReceived: true,
+          popup: true,
         }
       },
       metadata: {
         synthetic: true,
         source: 'frontend',
-        description: 'OAuth callback received from Okta'
+        description: 'OAuth callback received in popup window'
       }
     }
   }
@@ -104,14 +104,14 @@ export class EventGenerator {
         method: 'POST',
         body: {
           grantType: 'authorization_code',
-          codeVerifier: '[PKCE verifier]',
+          codeVerifier: '[PKCE verifier from popup]',
           redirectUri: window.location.origin + '/callback',
         }
       },
       metadata: {
         synthetic: true,
         source: 'frontend',
-        description: 'Exchanging authorization code for tokens'
+        description: 'Exchanging authorization code for tokens (in popup)'
       }
     }
   }
