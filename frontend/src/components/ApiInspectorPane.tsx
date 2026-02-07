@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { DemoEvent } from '../types/events'
 import RequestsList from './RequestsList'
-import ArchitectureDiagram from './ArchitectureDiagram'
 
 interface ApiInspectorPaneProps {
   events: DemoEvent[]
@@ -10,7 +9,6 @@ interface ApiInspectorPaneProps {
 
 export default function ApiInspectorPane({ events, isConnected }: ApiInspectorPaneProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const latestEvent = events.length > 0 ? events[events.length - 1] : undefined
 
   // Auto-scroll to latest event
   useEffect(() => {
@@ -84,10 +82,7 @@ export default function ApiInspectorPane({ events, isConnected }: ApiInspectorPa
             </p>
           </div>
         ) : (
-          <>
-            <ArchitectureDiagram events={events} latestEvent={latestEvent} />
-            <RequestsList events={events} />
-          </>
+          <RequestsList events={events} />
         )}
       </div>
     </div>
