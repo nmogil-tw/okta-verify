@@ -64,7 +64,7 @@ export default function OktaLoginPane({ onReset }: OktaLoginPaneProps) {
         useClassicEngine: true,         // Use Classic Engine
         useInteractionCodeFlow: false,  // Disable Interaction Code
         authParams: {
-          issuer: `${oktaOrgUrl}/oauth2/default`,
+          issuer: oktaOrgUrl,  // Use Org Authorization Server (not /oauth2/default)
           scopes: ['openid', 'profile', 'email'],
           responseType: 'code',  // Authorization Code flow
           pkce: true,            // Enable PKCE
